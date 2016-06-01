@@ -1,4 +1,4 @@
-package com.spark.sql.dataframe;
+package com.codethink.spark.sql.dataframe;
 
 /**
  * @author codethink

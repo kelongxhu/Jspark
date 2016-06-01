@@ -1,4 +1,4 @@
-package com.scala
+package com.codethink.scala
 
 
 /**

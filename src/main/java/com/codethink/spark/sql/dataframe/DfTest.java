@@ -1,6 +1,7 @@
-package com.spark.sql.dataframe;
+package com.codethink.spark.sql.dataframe;
 
 import com.alibaba.fastjson.JSON;
+import com.codethink.common.Config;
 import org.apache.avro.Schema;
 import org.apache.spark.SparkConf;
 import org.apache.spark.api.java.JavaPairRDD;
@@ -30,84 +31,68 @@ public class DfTest {
 
 
     public static void main(String[] args) {
+        //初始化环境
         final SparkConf conf = new SparkConf().setAppName("test2");
         conf.setMaster("local");
         JavaSparkContext sc = new JavaSparkContext(conf);
         final HiveContext sqlContext = new HiveContext(sc);
         JavaRDD<String> distFile = sc.textFile("/data/log/device_1.log");
+        //文本行转换为对象
         JavaRDD<Device> objectRdd = distFile.flatMap(new FlatMapFunction<String, Device>() {
             @Override
             public Iterable<Device> call(String s) throws Exception {
-                Device json = JSON.parseObject(s,Device.class);
+                Device json = JSON.parseObject(s, Device.class);
                 System.out.print("json:" + json);
                 return Collections.singletonList(json);
             }
         });
 
-//        StructType schema = getStructType(new Schema[] { Device.SCHEMA$ });
-
+        //对象转化为行
         JavaRDD<Row> rowRDD = objectRdd.map((Device device) -> {
             return RowFactory.create(device.getImei(), device.getApp());
         });
 
-
+        //组装DataFrame
         StructType schema = DataTypes
             .createStructType(new StructField[] {
                 DataTypes.createStructField("imei", DataTypes.StringType, true),
-                DataTypes.createStructField("app", DataTypes.StringType, true) });
-
+                DataTypes.createStructField("app", DataTypes.StringType, true)});
 
 
         final DataFrame deviceDF = sqlContext.createDataFrame(rowRDD, schema);
         deviceDF.registerTempTable("device");
-        DataFrame dataFrame = sqlContext.sql("SELECT imei,app FROM device where imei=100 and app=1");
-//        JavaRDD<String> row = dataFrame.javaRDD().map(new Function<Row, String>() {
-//            @Override
-//            public String call(Row row) throws Exception {
-//                return row.getAs("imei");
-//            }
-//        });
-
-//        System.out.println("========row:"+row.toString());
+        DataFrame dataFrame =
+            sqlContext.sql("SELECT imei,app FROM device where imei=100 and app=1");
 
         List<Row> collect = dataFrame.javaRDD().collect();
-        for (Row lists : collect){
-            String imei=lists.getAs("imei");
-            String app=lists.getAs("app");
-            System.out.println("imei:"+imei);
-            System.out.println("app:"+app);
+        for (Row lists : collect) {
+            String imei = lists.getAs("imei");
+            String app = lists.getAs("app");
+            System.out.println("imei:" + imei);
+            System.out.println("app:" + app);
             System.out.println("=============list:" + lists);
         }
 
-        //入库ES....
+        //组装入库ES RDD....
         final JavaPairRDD<String, Map<Object, Object>> esRdd =
             dataFrame.toJavaRDD().mapToPair(new PairFunction<Row, String, Map<Object, Object>>() {
                 @Override
                 public Tuple2<String, Map<Object, Object>> call(final Row row)
                     throws Exception {
-                    String imei=row.getAs("imei");
-                    String app=row.getAs("app");
+                    String imei = row.getAs("imei");
+                    String app = row.getAs("app");
                     final Map<Object, Object> map = new HashMap<>();
-                    map.put("imei",imei);
-                    map.put("app",app);
-                    return new Tuple2<>(imei+"_"+app,map);
+                    map.put("imei", imei);
+                    map.put("app", app);
+                    return new Tuple2<>(imei + "_" + app, map);
                 }
             }).coalesce(7);
 
+        //入库ES
         saveToEsWithMeta(esRdd, "cat_test/app",
-            getEsConfigMap());
+            Config.getEsConfigMap());
     }
 
-
-    public static Map<String, String> getEsConfigMap() {
-        Map<String, String> esConfigMap=new HashMap<>();
-        esConfigMap.put("es.clusterName","dashboard");
-        esConfigMap.put("es.nodes","172.26.32.18");
-        esConfigMap.put("es.port","9200");
-        esConfigMap.put("es.write.operation","upsert");
-        esConfigMap.put("es.index.auto.create","false");
-        return esConfigMap;
-    }
 
 
     private static StructType getStructType(Schema[] schemas) {

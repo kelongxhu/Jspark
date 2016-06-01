@@ -1,4 +1,4 @@
-package com.spark.demo;
+package com.codethink.spark.demo;
 
 
 import org.apache.spark.SparkConf;
